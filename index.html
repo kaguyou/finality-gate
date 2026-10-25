@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>finality-gate Pay</title>
+<!--
+  finality-gate — NFC tap landing page.
+
+  iOS background NFC reading only opens http/https URLs, never app schemes like
+  solana: . So the tag carries THIS page's URL with the Solana Pay URL in the hash:
+
+      https://<you>.github.io/finality-gate/#solana:<recipient>?amount=0.001&reference=<ref>&label=finality-gate
+
+  The page shows the payment, jumps to the wallet (solana: scheme), and offers a
+  button / QR / copy fallback. Nothing is sent to any server; the hash never
+  leaves the phone. Works as a plain static file (GitHub Pages, any http server).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+  /* Layout: one phone-width "terminal screen" card, amount first, one primary action. */
+  :root {
+    --bg: #eef1f6;
+    --surface: #ffffff;
+    --fg: #141a26;
+    --muted: #5d6880;
+    --line: #d7dde8;
+    --accent: #2457d6;
+    --accent-fg: #ffffff;
+    --ok: #1f9d55;
+    --warn: #b7791f;
+    --font-ui: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e1320; --surface: #171f31; --fg: #e9edf5; --muted: #98a3ba;
+      --line: #2a3448; --accent: #7a9bff; --accent-fg: #0b1020; --ok: #3ad57c; --warn: #e0a84a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1320; --surface: #171f31; --fg: #e9edf5; --muted: #98a3ba;
+    --line: #2a3448; --accent: #7a9bff; --accent-fg: #0b1020; --ok: #3ad57c; --warn: #e0a84a;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-ui);
+    font-size: 16px;
+    line-height: 1.45;
+    display: grid;
+    place-items: start center;
+    padding-block: max(20px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-bottom, 0px));
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  .card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 22px 20px 18px;
+    display: grid;
+    gap: 18px;
+  }
+  .eyebrow {
+    font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  h1 {
+    margin: 2px 0 0; font-size: 22px; font-weight: 800; line-height: 1.2; text-wrap: balance;
+    overflow-wrap: anywhere;
+  }
+  .amount {
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  }
+  .amount .num { font-size: 44px; font-weight: 600; line-height: 1; letter-spacing: -.01em; }
+  .amount .unit { font-size: 18px; color: var(--muted); }
+  .rows { display: grid; gap: 6px; margin-top: 10px; }
+  .row { display: grid; grid-template-columns: 56px 1fr; gap: 10px; align-items: baseline; min-width: 0; }
+  .row .k { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .row code {
+    font-family: var(--font-mono); font-size: 14px; min-width: 0; overflow-wrap: anywhere;
+  }
+  .btn {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; min-height: 54px; padding: 14px 18px;
+    border-radius: 12px; border: 1px solid transparent;
+    background: var(--accent); color: var(--accent-fg);
+    font: inherit; font-size: 17px; font-weight: 700; text-decoration: none; cursor: pointer;
+  }
+  .btn:focus-visible, .btn.secondary:focus-visible, summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  .btn.secondary { background: transparent; color: var(--fg); border-color: var(--line); min-height: 46px; font-size: 15px; }
+  .btn.pulse { animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.025); } }
+  @media (prefers-reduced-motion: reduce) { .btn.pulse { animation: none; } }
+  .status { margin: -6px 0 0; font-size: 14px; color: var(--muted); text-align: center; min-height: 1.4em; }
+  .status.ok { color: var(--ok); }
+  .status.warn { color: var(--warn); }
+
+  .release {
+    display: grid; grid-template-columns: 14px 1fr; gap: 12px; align-items: start;
+    padding: 14px; border-radius: 12px; border: 1px solid var(--line);
+  }
+  .release .dot { width: 10px; height: 10px; margin-top: 6px; border-radius: 50%; background: var(--ok); }
+  .release strong { display: block; font-size: 14px; }
+  .release p { margin: 4px 0 0; font-size: 14px; color: var(--muted); }
+  .release em { font-style: normal; font-weight: 700; color: var(--fg); }
+
+  details.more { border-top: 1px solid var(--line); padding-top: 12px; }
+  summary { cursor: pointer; font-weight: 700; font-size: 15px; color: var(--muted); list-style: none; display: flex; justify-content: space-between; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; font-family: var(--font-mono); }
+  details[open] summary::after { content: "–"; }
+  .more-body { display: grid; gap: 14px; padding-top: 14px; }
+  .qr { display: grid; place-items: center; padding: 12px; background: #fff; border-radius: 12px; border: 1px solid var(--line); }
+  .qr svg { width: min(220px, 70vw); height: auto; display: block; }
+  .hint { margin: 0; font-size: 13px; color: var(--muted); }
+  .hint a { color: var(--accent); }
+  footer { font-size: 12px; color: var(--muted); text-align: center; }
+  footer a { color: inherit; }
+
+  .error {
+    width: 100%; max-width: 420px; margin-top: 14px; padding: 14px 16px;
+    border-radius: 12px; border: 1px solid var(--line); background: var(--surface);
+    font-size: 14px; color: var(--fg);
+  }
+  .error code { font-family: var(--font-mono); font-size: 13px; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main class="card" id="card">
+  <header>
+    <div class="eyebrow">Solana Pay · Tap to pay</div>
+    <h1 id="label">finality-gate</h1>
+  </header>
+
+  <section>
+    <div class="amount">
+      <span class="num" id="amount">—</span>
+      <span class="unit" id="unit">SOL</span>
+    </div>
+    <div class="rows">
+      <div class="row"><span class="k">To</span><code id="recipient" title="">—</code></div>
+      <div class="row"><span class="k">Ref</span><code id="reference" title="">—</code></div>
+    </div>
+  </section>
+
+  <a id="pay" class="btn" href="#" rel="noopener">Open wallet to pay</a>
+  <p id="status" class="status" aria-live="polite">Opening your wallet…</p>
+
+  <section class="release" aria-label="Release condition">
+    <div class="dot" aria-hidden="true"></div>
+    <div>
+      <strong>Release on finality</strong>
+      <p>The device unlocks only when this transaction is <em>finalized</em> on Solana — about 0.15 s after your wallet sends it since Alpenglow, and it can never be rolled back.</p>
+    </div>
+  </section>
+
+  <details class="more" id="more">
+    <summary>Other ways to pay</summary>
+    <div class="more-body">
+      <div class="qr" id="qr" aria-label="Payment QR code"></div>
+      <button id="copy" class="btn secondary" type="button">Copy payment link</button>
+      <p class="hint">No wallet yet? Install <a href="https://phantom.com/download" rel="noopener">Phantom</a> or <a href="https://solflare.com" rel="noopener">Solflare</a>, then tap the tag again.</p>
+    </div>
+  </details>
+
+  <footer id="footer">finality-gate · open-source reference implementation</footer>
+</main>
+
+<div class="error" id="error" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script>
+(function () {
+  // Optional: hard-code a Solana Pay URL here so a bare page URL (no #hash) still works.
+  var DEFAULT_PAY_URL = "";
+  // Optional: link to the public repository (shown in the footer when set).
+  var REPO_URL = "";
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function getPayUrl() {
+    var h = location.hash ? location.hash.slice(1) : "";
+    if (h && h.indexOf("solana:") !== 0) { try { h = decodeURIComponent(h); } catch (e) {} }
+    if (h.indexOf("solana:") === 0) return h;
+    var q = new URLSearchParams(location.search).get("pay");
+    if (q && q.indexOf("solana:") === 0) return q;
+    return DEFAULT_PAY_URL;
+  }
+
+  function parsePay(url) {
+    var rest = url.slice("solana:".length);
+    var qi = rest.indexOf("?");
+    var recipient = qi < 0 ? rest : rest.slice(0, qi);
+    var p = new URLSearchParams(qi < 0 ? "" : rest.slice(qi + 1));
+    return {
+      recipient: recipient,
+      amount: p.get("amount"),
+      reference: p.get("reference"),
+      label: p.get("label"),
+      message: p.get("message"),
+      spl: p.get("spl-token")
+    };
+  }
+
+  function shorten(s) { return s && s.length > 12 ? s.slice(0, 4) + "…" + s.slice(-4) : (s || "—"); }
+
+  var payUrl = getPayUrl();
+  var status = $("status");
+
+  if (!payUrl) {
+    $("card").hidden = true;
+    var err = $("error");
+    err.hidden = false;
+    err.innerHTML =
+      "<strong>No payment link.</strong><br>Write the NFC tag with this page's address followed by " +
+      "<code>#</code> and the Solana Pay URL, e.g.<br><code>" + location.origin + location.pathname +
+      "#solana:&lt;recipient&gt;?amount=0.001&amp;reference=&lt;ref&gt;&amp;label=finality-gate</code>";
+    return;
+  }
+
+  var info = parsePay(payUrl);
+  if (info.label) { $("label").textContent = info.label; document.title = info.label + " · Pay"; }
+  $("amount").textContent = info.amount || "—";
+  $("unit").textContent = info.spl ? "tokens" : "SOL";
+  $("recipient").textContent = shorten(info.recipient);
+  $("recipient").title = info.recipient;
+  $("reference").textContent = shorten(info.reference);
+  $("reference").title = info.reference || "";
+  if (REPO_URL) { $("footer").innerHTML = '<a href="' + REPO_URL + '" rel="noopener">finality-gate</a> · open-source reference implementation'; }
+
+  var pay = $("pay");
+  pay.href = payUrl;
+
+  if (!info.reference) {
+    status.textContent = "This link has no reference key — the device cannot match your payment.";
+    status.className = "status warn";
+  }
+
+  // Try to open the wallet right away; keep the button as the reliable path.
+  var opened = false;
+  function markOpened() {
+    opened = true;
+    status.textContent = "Wallet opened. Approve the payment there.";
+    status.className = "status ok";
+    pay.classList.remove("pulse");
+  }
+  document.addEventListener("visibilitychange", function () { if (document.hidden) markOpened(); });
+  window.addEventListener("pagehide", markOpened);
+  pay.addEventListener("click", function () { setTimeout(function () { if (!opened) {
+    status.textContent = "Nothing opened? Install a Solana wallet, then tap again.";
+    status.className = "status warn";
+  } }, 2500); });
+
+  setTimeout(function () { try { location.href = payUrl; } catch (e) {} }, 250);
+  setTimeout(function () {
+    if (!opened && info.reference) {
+      status.textContent = "Tap the button to open your wallet.";
+      pay.classList.add("pulse");
+    }
+  }, 1800);
+
+  // QR fallback (another phone, or a desktop wallet that scans).
+  try {
+    var qr = qrcode(0, "M");
+    qr.addData(payUrl);
+    qr.make();
+    $("qr").innerHTML = qr.createSvgTag(4, 0);
+  } catch (e) { $("qr").hidden = true; }
+
+  // Copy link, with a selection fallback where the clipboard API is refused.
+  $("copy").addEventListener("click", function () {
+    var btn = this;
+    function done(ok) {
+      btn.textContent = ok ? "Copied" : "Copy failed — long-press the link below";
+      setTimeout(function () { btn.textContent = "Copy payment link"; }, 1800);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(payUrl).then(function () { done(true); }, function () { done(false); });
+    } else { done(false); }
+  });
+})();
+</script>
+</body>
+</html>
