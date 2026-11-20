@@ -1,0 +1,23 @@
+# Secrets — never commit wallet keypairs or API keys
+*.json.keypair
+keypair*.json
+wallet*.json
+.env
+.env.*
+!.env.example
+*secret*
+*private*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# finality-gate: gate.py writes Solana keypairs (64-byte secret keys) here
+pc/keys/
